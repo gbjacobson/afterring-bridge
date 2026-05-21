@@ -43,7 +43,7 @@ async function postAction(payload) {
 }
 
 function safeSend(ws, payload) {
-  if (ws.readyState === WebSocket.OPEN) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(typeof payload === "string" ? payload : JSON.stringify(payload));
   }
 }
