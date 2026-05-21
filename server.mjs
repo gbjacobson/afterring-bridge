@@ -97,6 +97,7 @@ wss.on("connection", (twilioWs) => {
     });
 
     openaiWs.on("open", () => {
+      console.log("[afterring-realtime] openai connected, sending session.update");
       safeSend(openaiWs, {
         type: "session.update",
         session: {
@@ -156,6 +157,9 @@ wss.on("connection", (twilioWs) => {
       let event;
       try {
         event = JSON.parse(raw.toString());
+        if (event.type && !event.type.includes("audio")) {
+          console.log("[afterring-realtime] openai event:", event.type, event.error || "");
+        }
       } catch {
         return;
       }
@@ -245,6 +249,7 @@ wss.on("connection", (twilioWs) => {
       streamSid = event.start?.streamSid || "";
       accountId = event.start?.customParameters?.accountId || "";
       leadId = event.start?.customParameters?.leadId || "";
+      console.log("[afterring-realtime] twilio start: streamSid=" + streamSid + " accountId=" + accountId + " leadId=" + leadId);
       if (!OPENAI_API_KEY || !CRON_SECRET || !accountId || !leadId) {
         console.error("[afterring-realtime] missing required startup config");
         twilioWs.close();
