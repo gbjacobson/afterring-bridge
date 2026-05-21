@@ -164,12 +164,15 @@ wss.on("connection", (twilioWs) => {
         return;
       }
 
-      if (event.type === "response.audio.delta" && event.delta && streamSid) {
-        safeSend(twilioWs, {
-          event: "media",
-          streamSid,
-          media: { payload: event.delta },
-        });
+      if (event.type === "response.audio.delta") {
+        console.log("[afterring-realtime] audio.delta: hasStreamSid=" + Boolean(streamSid) + " deltaLen=" + (event.delta?.length || 0));
+        if (event.delta && streamSid) {
+          safeSend(twilioWs, {
+            event: "media",
+            streamSid,
+            media: { payload: event.delta },
+          });
+        }
       }
 
       if (event.type === "response.audio_transcript.delta" && event.delta) {
