@@ -4,7 +4,7 @@ import WebSocket, { WebSocketServer } from "ws";
 
 const PORT = Number(process.env.PORT || process.env.AFTER_RING_REALTIME_PORT || 8787);
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-const OPENAI_REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime";
+const OPENAI_REALTIME_MODEL = process.env.OPENAI_REALTIME_MODEL || "gpt-realtime-2025-08-28";
 const APP_BASE_URL = (process.env.AFTER_RING_PUBLIC_BASE_URL || "http://localhost:3040").replace(/\/$/, "");
 const CRON_SECRET = process.env.CRON_SECRET || "";
 const REALTIME_VOICE = process.env.OPENAI_REALTIME_VOICE || "sage";
@@ -97,19 +97,26 @@ wss.on("connection", (twilioWs) => {
     });
 
     openaiWs.on("open", () => {
-      console.log("[afterring-realtime] openai connected, sending session.update");
       safeSend(openaiWs, {
         type: "session.update",
         session: {
+          type: "realtime",
           instructions: session.instructions,
-          voice: REALTIME_VOICE,
-          input_audio_format: "g711_ulaw",
-          output_audio_format: "g711_ulaw",
-          turn_detection: {
-            type: "server_vad",
-            threshold: 0.5,
-            prefix_padding_ms: 250,
-            silence_duration_ms: session.conciseMode ? 450 : 650,
+          output_modalities: ["audio"],
+          audio: {
+            input: {
+              format: { type: "audio/pcmu" },
+              turn_detection: {
+                type: "server_vad",
+                threshold: 0.5,
+                prefix_padding_ms: 250,
+                silence_duration_ms: session.conciseMode ? 450 : 650,
+              },
+            },
+            output: {
+              format: { type: "audio/pcmu" },
+              voice: REALTIME_VOICE,
+            },
           },
           temperature: 0.7,
           tools: [
@@ -157,15 +164,11 @@ wss.on("connection", (twilioWs) => {
       let event;
       try {
         event = JSON.parse(raw.toString());
-        if (event.type && !event.type.includes("audio")) {
-          console.log("[afterring-realtime] openai event:", event.type, event.error || "");
-        }
       } catch {
         return;
       }
 
-      if (event.type === "response.audio.delta") {
-        console.log("[afterring-realtime] audio.delta: hasStreamSid=" + Boolean(streamSid) + " deltaLen=" + (event.delta?.length || 0));
+      if (event.type === "response.output_audio.delta" || event.type === "response.audio.delta") {
         if (event.delta && streamSid) {
           safeSend(twilioWs, {
             event: "media",
@@ -175,7 +178,7 @@ wss.on("connection", (twilioWs) => {
         }
       }
 
-      if (event.type === "response.audio_transcript.delta" && event.delta) {
+      if ((event.type === "response.output_audio_transcript.delta" || event.type === "response.audio_transcript.delta") && event.delta) {
         transcript.push(event.delta);
       }
 
@@ -252,7 +255,6 @@ wss.on("connection", (twilioWs) => {
       streamSid = event.start?.streamSid || "";
       accountId = event.start?.customParameters?.accountId || "";
       leadId = event.start?.customParameters?.leadId || "";
-      console.log("[afterring-realtime] twilio start: streamSid=" + streamSid + " accountId=" + accountId + " leadId=" + leadId);
       if (!OPENAI_API_KEY || !CRON_SECRET || !accountId || !leadId) {
         console.error("[afterring-realtime] missing required startup config");
         twilioWs.close();
