@@ -134,7 +134,7 @@ wss.on("connection", (twilioWs) => {
             {
               type: "function",
               name: "finish_call",
-              description: "Save a concise owner-facing summary at the end of the call.",
+              description: "Call this at the end of every call. The summary must be one specific sentence describing exactly what the caller needed — e.g. 'Wants a haircut Saturday afternoon, asked about pricing for kids.' Never write 'caller called' or generic phrases.",
               parameters: {
                 type: "object",
                 properties: {
