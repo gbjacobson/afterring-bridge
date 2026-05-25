@@ -27,6 +27,10 @@ function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function publicDiagnostic(value) {
+  return String(value).replace(/AIza[0-9A-Za-z_-]+/g, "[redacted-api-key]").slice(0, 500);
+}
+
 // --- Audio conversion (Twilio ↔ Gemini) ---
 // Twilio sends/receives: µ-law 8 kHz
 // Gemini expects/returns: PCM16 16 kHz (in) / 24 kHz (out)
@@ -240,18 +244,18 @@ wss.on("connection", (twilioWs) => {
       }
 
       if (msg.error) {
-        diagnostics.lastError = JSON.stringify(msg.error).slice(0, 500);
+        diagnostics.lastError = publicDiagnostic(JSON.stringify(msg.error));
         console.error("[afterring] gemini error", msg.error);
       }
     });
 
     geminiWs.on("error", (err) => {
-      diagnostics.lastError = errorMessage(err).slice(0, 500);
+      diagnostics.lastError = publicDiagnostic(errorMessage(err));
       console.error("[afterring] gemini socket error", err);
     });
     geminiWs.on("close", (code, reason) => {
       if (code !== 1000) {
-        diagnostics.lastClose = `${code}: ${reason.toString()}`.slice(0, 500);
+        diagnostics.lastClose = publicDiagnostic(`${code}: ${reason.toString()}`);
         console.error(`[afterring] gemini socket closed (${code}): ${reason.toString()}`);
       }
     });
@@ -271,7 +275,7 @@ wss.on("connection", (twilioWs) => {
         return;
       }
       connectGemini().catch((err) => {
-        diagnostics.lastError = `startup: ${errorMessage(err)}`.slice(0, 500);
+        diagnostics.lastError = publicDiagnostic(`startup: ${errorMessage(err)}`);
         console.error("[afterring] startup failure", err);
         twilioWs.close();
       });
