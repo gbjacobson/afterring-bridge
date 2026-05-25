@@ -4,7 +4,7 @@ import WebSocket, { WebSocketServer } from "ws";
 
 const PORT = Number(process.env.PORT || 8787);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "models/gemini-2.0-flash-live-001";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "models/gemini-2.5-flash-native-audio-preview-12-2025";
 const GEMINI_VOICE = process.env.GEMINI_VOICE || "Puck";
 const APP_BASE_URL = (process.env.AFTER_RING_PUBLIC_BASE_URL || "http://localhost:3040").replace(/\/$/, "");
 const CRON_SECRET = process.env.CRON_SECRET || "";
@@ -119,7 +119,7 @@ wss.on("connection", (twilioWs) => {
 
   async function connectGemini() {
     const session = await fetchSession(accountId);
-    const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
+    const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
     geminiWs = new WebSocket(geminiUrl);
 
     geminiWs.on("open", () => {
@@ -131,6 +131,8 @@ wss.on("connection", (twilioWs) => {
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: GEMINI_VOICE } } },
           },
           systemInstruction: { parts: [{ text: session.instructions }] },
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
           tools: [{
             functionDeclarations: [
               {
@@ -184,8 +186,11 @@ wss.on("connection", (twilioWs) => {
       }
 
       // Caller transcript
-      if (msg.serverContent?.inputTranscription)
-        transcript.push(`\nCaller: ${msg.serverContent.inputTranscription}\n`);
+      if (msg.serverContent?.inputTranscription?.text)
+        transcript.push(`\nCaller: ${msg.serverContent.inputTranscription.text}\n`);
+
+      if (msg.serverContent?.outputTranscription?.text)
+        transcript.push(`Assistant: ${msg.serverContent.outputTranscription.text}\n`);
 
       // Barge-in: caller started talking — clear Twilio's audio buffer
       if (msg.serverContent?.interrupted && streamSid)
@@ -209,6 +214,11 @@ wss.on("connection", (twilioWs) => {
     });
 
     geminiWs.on("error", (err) => console.error("[afterring] gemini socket error", err));
+    geminiWs.on("close", (code, reason) => {
+      if (code !== 1000) {
+        console.error(`[afterring] gemini socket closed (${code}): ${reason.toString()}`);
+      }
+    });
   }
 
   twilioWs.on("message", async (raw) => {
@@ -231,7 +241,7 @@ wss.on("connection", (twilioWs) => {
       // µ-law 8kHz → PCM16 16kHz → Gemini
       const ulaw = Buffer.from(event.media.payload, "base64");
       const pcm16 = upsample8to16(ulawBufToPcm16Buf(ulaw));
-      safeSend(geminiWs, { realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: pcm16.toString("base64") }] } });
+      safeSend(geminiWs, { realtimeInput: { audio: { mimeType: "audio/pcm;rate=16000", data: pcm16.toString("base64") } } });
     }
 
     if (event.event === "stop") {
