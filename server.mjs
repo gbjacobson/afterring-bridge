@@ -245,18 +245,18 @@ wss.on("connection", (twilioWs) => {
 
       if (msg.error) {
         diagnostics.lastError = publicDiagnostic(JSON.stringify(msg.error));
-        console.error("[afterring] gemini error", msg.error);
+        console.error("[afterring] gemini error", diagnostics.lastError);
       }
     });
 
     geminiWs.on("error", (err) => {
       diagnostics.lastError = publicDiagnostic(errorMessage(err));
-      console.error("[afterring] gemini socket error", err);
+      console.error("[afterring] gemini socket error", diagnostics.lastError);
     });
     geminiWs.on("close", (code, reason) => {
       if (code !== 1000) {
         diagnostics.lastClose = publicDiagnostic(`${code}: ${reason.toString()}`);
-        console.error(`[afterring] gemini socket closed (${code}): ${reason.toString()}`);
+        console.error(`[afterring] gemini socket closed: ${diagnostics.lastClose}`);
       }
     });
   }
@@ -276,7 +276,7 @@ wss.on("connection", (twilioWs) => {
       }
       connectGemini().catch((err) => {
         diagnostics.lastError = publicDiagnostic(`startup: ${errorMessage(err)}`);
-        console.error("[afterring] startup failure", err);
+        console.error("[afterring] startup failure", diagnostics.lastError);
         twilioWs.close();
       });
     }
