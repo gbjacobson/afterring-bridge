@@ -4,7 +4,12 @@ import WebSocket, { WebSocketServer } from "ws";
 
 const PORT = Number(process.env.PORT || 8787);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "models/gemini-2.5-flash-native-audio-preview-12-2025";
+const ACTIVE_GEMINI_MODEL = "models/gemini-2.5-flash-native-audio-preview-12-2025";
+const configuredGeminiModel = process.env.GEMINI_MODEL || "";
+const GEMINI_MODEL =
+  !configuredGeminiModel || configuredGeminiModel === "models/gemini-2.0-flash-live-001"
+    ? ACTIVE_GEMINI_MODEL
+    : configuredGeminiModel;
 const GEMINI_VOICE = process.env.GEMINI_VOICE || "Puck";
 const APP_BASE_URL = (process.env.AFTER_RING_PUBLIC_BASE_URL || "http://localhost:3040").replace(/\/$/, "");
 const CRON_SECRET = process.env.CRON_SECRET || "";
