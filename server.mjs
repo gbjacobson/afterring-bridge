@@ -13,6 +13,19 @@ const GEMINI_MODEL =
 const GEMINI_VOICE = process.env.GEMINI_VOICE || "Puck";
 const APP_BASE_URL = (process.env.AFTER_RING_PUBLIC_BASE_URL || "http://localhost:3040").replace(/\/$/, "");
 const CRON_SECRET = process.env.CRON_SECRET || "";
+const diagnostics = {
+  twilioConnections: 0,
+  sessionFetches: 0,
+  geminiConnections: 0,
+  setupComplete: 0,
+  outputMediaPackets: 0,
+  lastError: "",
+  lastClose: "",
+};
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
 
 // --- Audio conversion (Twilio ↔ Gemini) ---
 // Twilio sends/receives: µ-law 8 kHz
@@ -104,7 +117,13 @@ function safeSend(ws, payload) {
 // --- HTTP server ---
 const server = http.createServer((req, res) => {
   if (req.url === "/health")
-    return json(res, 200, { ok: true, model: GEMINI_MODEL, hasGemini: Boolean(GEMINI_API_KEY), hasAppSecret: Boolean(CRON_SECRET) });
+    return json(res, 200, {
+      ok: true,
+      model: GEMINI_MODEL,
+      hasGemini: Boolean(GEMINI_API_KEY),
+      hasAppSecret: Boolean(CRON_SECRET),
+      diagnostics,
+    });
   json(res, 404, { error: "Not found" });
 });
 
@@ -118,16 +137,19 @@ server.on("upgrade", (req, socket, head) => {
 
 // --- Per-call handler ---
 wss.on("connection", (twilioWs) => {
+  diagnostics.twilioConnections++;
   let geminiWs;
   let accountId = "", leadId = "", streamSid = "";
   let transcript = [];
 
   async function connectGemini() {
     const session = await fetchSession(accountId);
+    diagnostics.sessionFetches++;
     const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${GEMINI_API_KEY}`;
     geminiWs = new WebSocket(geminiUrl);
 
     geminiWs.on("open", () => {
+      diagnostics.geminiConnections++;
       safeSend(geminiWs, {
         setup: {
           model: GEMINI_MODEL,
@@ -170,6 +192,7 @@ wss.on("connection", (twilioWs) => {
 
       // Gemini signals it's ready — send the greeting trigger
       if (msg.setupComplete) {
+        diagnostics.setupComplete++;
         safeSend(geminiWs, {
           clientContent: {
             turns: [{ role: "user", parts: [{ text: "The phone call just connected. Greet the caller now." }] }],
@@ -184,6 +207,7 @@ wss.on("connection", (twilioWs) => {
           if (part.inlineData?.mimeType?.startsWith("audio/pcm") && part.inlineData.data) {
             const pcm24 = Buffer.from(part.inlineData.data, "base64");
             const ulaw = pcm16BufToUlawBuf(downsample24to8(pcm24));
+            diagnostics.outputMediaPackets++;
             safeSend(twilioWs, { event: "media", streamSid, media: { payload: ulaw.toString("base64") } });
           }
           if (part.text) transcript.push(part.text);
@@ -215,12 +239,19 @@ wss.on("connection", (twilioWs) => {
         }
       }
 
-      if (msg.error) console.error("[afterring] gemini error", msg.error);
+      if (msg.error) {
+        diagnostics.lastError = JSON.stringify(msg.error).slice(0, 500);
+        console.error("[afterring] gemini error", msg.error);
+      }
     });
 
-    geminiWs.on("error", (err) => console.error("[afterring] gemini socket error", err));
+    geminiWs.on("error", (err) => {
+      diagnostics.lastError = errorMessage(err).slice(0, 500);
+      console.error("[afterring] gemini socket error", err);
+    });
     geminiWs.on("close", (code, reason) => {
       if (code !== 1000) {
+        diagnostics.lastClose = `${code}: ${reason.toString()}`.slice(0, 500);
         console.error(`[afterring] gemini socket closed (${code}): ${reason.toString()}`);
       }
     });
@@ -239,7 +270,11 @@ wss.on("connection", (twilioWs) => {
         twilioWs.close();
         return;
       }
-      connectGemini().catch((err) => { console.error("[afterring] startup failure", err); twilioWs.close(); });
+      connectGemini().catch((err) => {
+        diagnostics.lastError = `startup: ${errorMessage(err)}`.slice(0, 500);
+        console.error("[afterring] startup failure", err);
+        twilioWs.close();
+      });
     }
 
     if (event.event === "media" && event.media?.payload && geminiWs?.readyState === WebSocket.OPEN) {
